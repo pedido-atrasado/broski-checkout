@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="pt-PT">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Fazer uma doação</title>
+<style>
+  :root { --azul:#0b5ed7; --linha:#dfe3e8; --cinza:#5a6b7b; }
+  * { box-sizing:border-box; }
+  body { font-family:system-ui,-apple-system,"Segoe UI",sans-serif; margin:0; background:#f4f6f9; color:#1a2027; }
+  .wrap { max-width:520px; margin:32px auto; padding:0 16px; }
+  .card { background:#fff; border:1px solid var(--linha); border-radius:12px; padding:24px; }
+  h1 { font-size:20px; margin:0 0 20px; }
+  label { display:block; font-size:13px; font-weight:600; margin:14px 0 6px; }
+  input, select { width:100%; padding:11px 12px; border:1px solid var(--linha); border-radius:8px; font-size:15px; font-family:inherit; }
+  .metodos { display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-top:6px; }
+  .metodo { border:2px solid var(--linha); border-radius:10px; padding:14px; text-align:center; cursor:pointer; background:#fff; display:flex; align-items:center; justify-content:center; min-height:64px; }
+  .metodo.sel { border-color:var(--azul); background:#f0f6ff; }
+  button.pagar { width:100%; margin-top:20px; padding:14px; border:0; border-radius:8px; background:var(--azul); color:#fff; font-size:16px; font-weight:600; cursor:pointer; }
+  button.pagar:disabled { opacity:.5; cursor:not-allowed; }
+  .erro { background:#fff4f4; border:1px solid #f3c2c2; color:#8a1f1f; padding:12px 14px; border-radius:8px; margin-top:16px; font-size:14px; line-height:1.5; }
+  .aviso { background:#fff8e6; border:1px solid #f0d79a; color:#6b4e00; padding:12px 14px; border-radius:8px; margin-top:16px; font-size:14px; line-height:1.5; }
+  .voucher { text-align:center; }
+  .voucher .linha { display:flex; justify-content:space-between; padding:12px 0; border-bottom:1px solid var(--linha); font-size:15px; }
+  .voucher .linha b { font-size:19px; letter-spacing:1px; font-variant-numeric:tabular-nums; }
+  .espera { text-align:center; padding:18px 0; }
+  .spin { width:38px; height:38px; margin:0 auto 16px; border:3px solid #e3e8ee; border-top-color:var(--azul); border-radius:50%; animation:g .9s linear infinite; }
+  @keyframes g { to { transform:rotate(360deg); } }
+  .ok { text-align:center; }
+  .ok .tick { font-size:44px; color:#128a3d; }
+  .sub { color:var(--cinza); font-size:14px; line-height:1.55; }
+  #phone-wrap { display:none; }
+  .valores { display:grid; gap:10px; margin-top:6px; }
+  .valor { border:1px solid var(--linha); border-radius:10px; padding:16px; cursor:pointer; display:flex; gap:14px; align-items:flex-start; background:#fff; }
+  .valor.sel { border-color:var(--azul); border-width:2px; padding:15px; background:#f7fbff; }
+  .valor input[type=radio] { width:auto; margin:3px 0 0; accent-color:var(--azul); flex:none; }
+  .valor .quantia { font-size:22px; font-weight:700; line-height:1.1; display:block; }
+  .valor .oque { color:var(--cinza); font-size:14px; line-height:1.5; margin-top:5px; display:block; }
+  .livre-input { display:none; margin-top:12px; align-items:center; gap:8px; }
+  .valor.sel .livre-input { display:flex; }
+  :focus-visible { outline:2px solid var(--azul); outline-offset:2px; }
+</style>
+</head>
+<body>
+<div class="wrap"><div class="card" id="app"></div></div>
+
+<script>
+const app = document.getElementById('app');
+let poll = null, prazo = null;
+
+const eur = c => '€' + (c/100).toFixed(2).replace('.', ',');
+
+// Espelha o CATALOG do servidor — isto e so o texto que o doador ve.
+const DEGRAUS = [
+  { sku:'doacao-30',   amount:3000,   oque:'12 dias de medicação para dor' },
+  { sku:'doacao-50',   amount:5000,   oque:'19 dias de medicação para dor' },
+  { sku:'doacao-100',  amount:10000,  oque:'20 dias de pensos especiais' },
+  { sku:'doacao-250',  amount:25000,  oque:'30 dias de medicação, pensos especiais e refeições' },
+  { sku:'doacao-500',  amount:50000,  oque:'60 dias de medicação, pensos especiais e refeições' },
+  { sku:'doacao-1000', amount:100000, oque:'120 dias de medicação, pensos especiais e refeições' },
+];
+const LIVRE_MIN = 100, LIVRE_MAX = 500000;   // tem de bater com o server.js
+
+function formulario(erroHtml = '') {
+  clearInterval(poll); clearInterval(prazo);
+  app.innerHTML = `
+    <h1>Fazer uma doação</h1>
+    <label>Valor da doação</label>
+    <div class="valores">
+      ${DEGRAUS.map(d => `
+      <label class="valor" data-sku="${d.sku}">
+        <input type="radio" name="valor" value="${d.sku}">
+        <span><span class="quantia">${eur(d.amount)}</span><span class="oque">${d.oque}</span></span>
+      </label>`).join('')}
+      <label class="valor" data-sku="doacao-livre">
+        <input type="radio" name="valor" value="doacao-livre">
+        <span style="flex:1">
+          <span class="quantia">Outro valor</span>
+          <span class="oque">Escolha quanto quer doar</span>
+          <span class="livre-input">
+            <span style="font-size:18px;color:var(--cinza)">€</span>
+            <input id="livre" inputmode="decimal" placeholder="0,00" aria-label="Valor da doação em euros">
+          </span>
+        </span>
+      </label>
+    </div>
+    <label for="name">Nome</label>
+    <input id="name" autocomplete="name">
+    <label for="email">E-mail *</label>
+    <input id="email" type="email" required autocomplete="email">
+    <label>Método de pagamento</label>
+    <div class="metodos">
+      <div class="metodo sel" data-m="mbway">
+        <img src="https://docs.broski.pt/assets/mbway.svg" alt="MB WAY" height="28">
+      </div>
+      <div class="metodo" data-m="multibanco">
+        <img src="https://docs.broski.pt/assets/multibanco.svg" alt="Multibanco" height="40">
+      </div>
+    </div>
+    <div id="phone-wrap" style="display:block">
+      <label for="phone">Telemóvel MB WAY *</label>
+      <input id="phone" inputmode="numeric" placeholder="9XX XXX XXX" autocomplete="tel">
+    </div>
+    ${erroHtml}
+    <button class="pagar" id="btn">Doar</button>`;
+
+  const cartoes = [...document.querySelectorAll('.valor')];
+  const marcar = el => {
+    cartoes.forEach(x => x.classList.remove('sel'));
+    el.classList.add('sel');
+    el.querySelector('input[type=radio]').checked = true;
+  };
+  cartoes.forEach(el => el.addEventListener('click', () => marcar(el)));
+  marcar(cartoes[1]);   // €50 pre-selecionado
+
+  let metodo = 'mbway';
+  document.querySelectorAll('.metodo').forEach(el => el.onclick = () => {
+    document.querySelectorAll('.metodo').forEach(x => x.classList.remove('sel'));
+    el.classList.add('sel');
+    metodo = el.dataset.m;
+    document.getElementById('phone-wrap').style.display = metodo === 'mbway' ? 'block' : 'none';
+  });
+
+  document.getElementById('btn').onclick = async () => {
+    const escolhido = document.querySelector('.valor.sel');
+    if (!escolhido) return formulario(`<div class="erro">Escolha um valor para doar.</div>`);
+    const sku = escolhido.dataset.sku;
+    let amount;
+    if (sku === 'doacao-livre') {
+      const bruto = document.getElementById('livre').value.trim().replace(',', '.');
+      amount = Math.round(Number(bruto) * 100);
+      if (!bruto || !Number.isFinite(amount) || amount < LIVRE_MIN || amount > LIVRE_MAX) {
+        return formulario(`<div class="erro">Indique um valor entre ${eur(LIVRE_MIN)} e ${eur(LIVRE_MAX)}.</div>`);
+      }
+    }
+
+    const btn = document.getElementById('btn');
+    btn.disabled = true; btn.textContent = 'A processar…';
+    const body = {
+      sku, amount,
+      method: metodo,
+      name: document.getElementById('name').value,
+      email: document.getElementById('email').value,
+      phone: document.getElementById('phone').value,
+    };
+    try {
+      const r = await fetch('/api/checkout', {
+        method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(body),
+      });
+      const d = await r.json();
+      if (!r.ok) {
+        // 409 mbway_pending_for_phone: mostrar a message tal e qual, NAO e falha de pagamento.
+        const cls = d.error === 'mbway_pending_for_phone' ? 'aviso' : 'erro';
+        return formulario(`<div class="${cls}">${d.message || d.error}</div>`);
+      }
+      d.method === 'mbway' ? esperaMbway(d) : voucher(d);
+    } catch (e) {
+      formulario(`<div class="erro">Erro de rede. Tente novamente.</div>`);
+    }
+  };
+}
+
+// MB WAY: ecra de espera + polling do NOSSO servidor (2-3s), timeout de UX ~5 min.
+function esperaMbway(d) {
+  const inicio = Date.now();
+  app.innerHTML = `
+    <div class="espera">
+      <div class="spin"></div>
+      <h1 style="margin-bottom:8px">Confirme o pagamento na app MB WAY</h1>
+      <p class="sub">Enviámos um pedido de ${eur(d.amount)} para o seu telemóvel.<br>Abra a app MB WAY e confirme.</p>
+      <p class="sub" style="margin-top:16px" id="tempo"></p>
+    </div>`;
+
+  poll = setInterval(async () => {
+    const dec = Math.max(0, 300 - Math.floor((Date.now()-inicio)/1000));
+    document.getElementById('tempo').textContent =
+      `Tempo restante: ${String(Math.floor(dec/60)).padStart(2,'0')}:${String(dec%60).padStart(2,'0')}`;
+
+    if (dec === 0) { clearInterval(poll); return naoConfirmado('O tempo para confirmar esgotou.'); }
+
+    const r = await fetch(`/api/orders/${d.ref}/status`);
+    const s = await r.json();
+    if (s.status === 'paid') { clearInterval(poll); return pago(s); }
+    if (s.status === 'failed' || s.status === 'expired') {
+      clearInterval(poll);
+      return naoConfirmado('O pagamento não foi confirmado.');
+    }
+  }, 2500);
+}
+
+// Multibanco: ecra FINAL, sem spinner e sem polling.
+function voucher(d) {
+  const mb = d.multibanco || {};
+  const exp = mb.expires_at ? new Date(mb.expires_at).toLocaleString('pt-PT') : '—';
+  app.innerHTML = `
+    <div class="voucher">
+      <img src="https://docs.broski.pt/assets/multibanco.svg" alt="Multibanco" height="48">
+      <h1 style="margin:16px 0 6px">Guarde estes dados</h1>
+      <p class="sub">Pague num Multibanco, no homebanking ou na app do seu banco.</p>
+      <div style="margin-top:18px;text-align:left">
+        <div class="linha"><span>Entidade</span><b>${mb.entity || '—'}</b></div>
+        <div class="linha"><span>Referência</span><b>${mb.reference || '—'}</b></div>
+        <div class="linha"><span>Valor</span><b>${eur(mb.amount ?? d.amount)}</b></div>
+        <div class="linha" style="border:0"><span>Válido até</span><b style="font-size:15px">${exp}</b></div>
+      </div>
+      <p class="sub" style="margin-top:18px">Enviámos também estes dados para o seu e-mail. Assim que o pagamento for confirmado, receberá a confirmação.</p>
+      <button class="pagar" onclick="location.reload()">Concluir</button>
+    </div>`;
+}
+
+function pago(s) {
+  app.innerHTML = `
+    <div class="ok">
+      <div class="tick">✓</div>
+      <h1>Doação confirmada</h1>
+      <p class="sub">Recebemos ${eur(s.amount)}. Obrigado.</p>
+      <p class="sub">Referência: <code>${s.ref}</code></p>
+      <button class="pagar" onclick="location.reload()">Voltar</button>
+    </div>`;
+}
+
+function naoConfirmado(msg) {
+  formulario(`<div class="erro">${msg} Pode tentar novamente.</div>`);
+}
+
+formulario();
+</script>
+</body>
+</html>

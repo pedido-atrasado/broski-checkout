@@ -1,0 +1,25 @@
+{
+  "name": "broski-checkout",
+  "version": "1.0.0",
+  "description": "Checkout MB WAY + Multibanco sobre a API Broski.",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "start": "node server.js",
+    "mock": "node test/mock-broski.js",
+    "test": "node --test test/webhook.test.js test/store.test.js test/mailer.test.js",
+    "e2e": "node test/e2e.js",
+    "pack": "node scripts/empacotar.js"
+  },
+  "dependencies": {
+    "express": "^5.2.1",
+    "nodemailer": "^10.0.1"
+  },
+  "comentarios": {
+    "pg": "npm i pg — só para lib/store.pg.js. Sem isto, o import do Postgres falha no arranque.",
+    "nodemailer": "npm i nodemailer — só para lib/mailer.js. Sem isto, os e-mails vão para o stdout em vez de serem enviados."
+  }
+}
